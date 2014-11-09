@@ -5,7 +5,7 @@ import Control.Monad
 
 data Mood = SELF_SATISFIED | FRUSTRATED | PLEASED | PAINED | BORED
     deriving (Eq, Ord, Show, Read, Enum, Bounded) -- 'cuz why not
-data Experiment = E1 | E2 deriving (Eq, Ord, Show, Read, Enum, Bounded)
+data Experiment = E1 | E2 | E3 | E4 deriving (Eq, Ord, Show, Read, Enum, Bounded)
 data Result = R1 | R2 | R3 deriving (Eq, Ord, Show, Read, Enum, Bounded)
 type Interaction = (Experiment, Result)
 type CompositeInteraction = (Interaction,Interaction)
@@ -18,9 +18,14 @@ primitiveInteractions = Map.fromList -- I decided to just hardcode them this tim
     [((E1, R1),-1)
     ,((E1, R2), 1)
     ,((E2, R1),-1)
-    ,((E2, R2), 1)]
+    ,((E2, R2), 1)
+    ,((E3, R1),-1)
+    ,((E3, R2), 1)
+    ,((E4, R1),-1)
+    ,((E4, R2), 1)]
     
-experiments = [E1,E2]
+
+experiments = [minBound .. maxBound] :: [Experiment]
 
 
 -- Odd, when I start it at (E2,R1), it's pained on step 9 (whereas the official Java is pleased) with Env31
@@ -28,16 +33,19 @@ experiments = [E1,E2]
 -- Initial conditions change how the agent learns at first =]
 -- The simple version (Table 33-2/Existence030) isn't implemented.
 main = do
-    action [0..20] (E2,R1) PAINED Map.empty -- default values
+    action [0..20] (E3,R1) PAINED Map.empty -- default values
 
 
 action :: [Int] -> Interaction -> Mood -> KnownInteraction -> IO ()
 action [] _ _ _ = return ()
 action count previousInteraction mood knownInteractions = do
     let (experiment, sortedAnticipations) = selectExperiment $ anticipate31 previousInteraction knownInteractions
-        --result = getResult10 experiment
+        --result = getResult10 experiment -- This experiment switching should go in a function too!
         result = getResult30 (fst previousInteraction) experiment
         --result = getResult31 experiment (head count)
+        --result = getResultE4 experiment
+        --result = getResultE3 experiment
+        
         enactedInteraction = (experiment, result)
         valence = getValence enactedInteraction
     mapM_ printProposal (reverse sortedAnticipations)
@@ -55,12 +63,16 @@ selectExperiment :: Anticipation -> (Experiment,[(Float, Experiment)])
 selectExperiment anticipations
     | Map.null anticipations = (E1, []) -- why not?
     | otherwise = 
-        let sortedAnticipations = sort $ zip (Map.elems anticipations) (Map.keys anticipations)
+        let proposedExperiments = Map.keys anticipations
+            sortedAnticipations = sort $ zip (Map.elems anticipations) (proposedExperiments)
             bestBet = last sortedAnticipations
             bestExperiment = snd bestBet -- (valence,e)
         in if fst bestBet >= 0 -- the proclivity
             then (bestExperiment, sortedAnticipations)
-            else (head (experiments \\ [bestExperiment]), sortedAnticipations)
+            else let otherExperiments = experiments \\ proposedExperiments -- messy and should go in another function
+                 in if otherExperiments /= []
+                        then (head otherExperiments, sortedAnticipations)
+                        else (maxBound :: Experiment, sortedAnticipations)
 
 -- dictionary filter, map and map... the last one being O(n * logn), maybe this is too slow? :(
 anticipate31 :: Interaction -> KnownInteraction -> Anticipation
@@ -85,17 +97,23 @@ printProposal (proclivity, experiment) =
 getValence :: Interaction-> Float -- Because dealing with the Maybe is a pain
 getValence interaction = case Map.lookup interaction primitiveInteractions of
     Just valence -> valence
-    Nothing -> 0
+    Nothing -> -0.1
 
 getMood :: Float -> Mood
 getMood valence 
     | valence >= 0 = PLEASED
     | otherwise = PAINED
+    
+getNextExperiment :: Experiment -> Experiment
+getNextExperiment exp
+    | exp == (maxBound :: Experiment) = E1
+    | otherwise = succ exp
 
 -- Environment 10
 getResult10 :: Experiment -> Result
 getResult10 E1 = R1
 getResult10 E2 = R2
+getResult10 _  = R1
 
 -- Environment 30
 getResult30 :: Experiment -> Experiment -> Result
@@ -110,8 +128,15 @@ getResult31 experiment cycle
     | cycle < 8 || cycle >= 15 = if experiment == E1 then R1 else R2
     | otherwise = if experiment == E1 then R2 else R1
 
+-- There are many possible compositeInteractions buliding up to E4, so the learning curve is high.
+-- Learns to always do E4 by Step 15.
+getResultE4 :: Experiment -> Result
+getResultE4 E4 = R2
+getResultE4 _  = R1
 
-
+getResultE3 :: Experiment -> Result
+getResultE3 E3 = R2
+getResultE3 _  = R1
 
 {-
 -- For testing.
