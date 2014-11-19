@@ -26,12 +26,14 @@ primitiveInteractions = Map.fromList -- I decided to just hardcode them this tim
     ,((E2, R2), 1)] -}
 
 -- Hardcoded primitives
+-- Valence 2.5 for Env40 -- less and it explodes with ever longer interactions, more and... 3 works too!
+-- Valence 3 for Env41
 primitiveInteractions :: ValenceMap
 primitiveInteractions = Map.fromList 
     [((Primitive E1 R1),-1)
-    ,((Primitive E1 R2), 2.5)
+    ,((Primitive E1 R2), 3)
     ,((Primitive E2  R1),-1)
-    ,(( Primitive E2  R2), 2.5)]
+    ,(( Primitive E2  R2), 3)]
     
 primitiveSuggestions :: Map.Map Inter Float
 primitiveSuggestions = Map.fromList
@@ -136,10 +138,9 @@ mergePrimitives other = other
 selectExperiment :: Map.Map Inter Float -> [(Float, Inter)]
 selectExperiment anticipations = reverse $ sort $ zip (Map.elems anticipations) (Map.keys anticipations)
 
--- If anticipation fails, create new composite <what we tried to do, what we got>
--- Currently not used.
+-- If anticipation fails, create new composite
 failCheck :: Inter -> Inter -> Inter
-failCheck (Composite pre post) intended = Composite intended (Composite pre post)
+failCheck (Composite pre post) (Composite ipre ipost) = Composite pre ipost
 failCheck other _ = other
 
 -- Enacts composite interactions recursively. Hard to pass environment history through.
@@ -165,14 +166,14 @@ enactE (Composite pre post) = do
 enactE (Primitive e _) = do
     envHist <- get
     put (e:envHist)
-    return $ Primitive e (getResult40 envHist e)
+    --return $ Primitive e (getResult40 envHist e)
     --return $ Primitive e (getResult10 e)
     --return $ Primitive e (getResult30 (head envHist) e)
-    --return $ Primitive e (getResult41 envHist e)
+    return $ Primitive e (getResult41 envHist e)
 enactE None = return None
 
 main = do
-    step [0..30] [Primitive E1 R1, Primitive E1 R1] [E1,E1,E1] Map.empty -- default values
+    step [0..100] [Primitive E1 R1, Primitive E1 R1] [E1,E1,E1] Map.empty -- default values
 
 -- I was thinking it'd be easier to just keep a list of everything we did -_-;
 -- hist = [previous, pre-1,pre-2,...]
@@ -185,7 +186,7 @@ step count hist envHist memory = do
     let anticipations = anticipate memory context
     --print anticipations
     let    experiments = selectExperiment anticipations
-    mapM_ printProposal experiments
+    --mapM_ printProposal experiments
     
     let intendedInteraction' = snd $ head experiments -- highest proclivity
         intendedInteraction = if (fst $ head experiments) < 0
@@ -193,9 +194,10 @@ step count hist envHist memory = do
                               else intendedInteraction'
         (enacted, envHist') = runState (enactE intendedInteraction) envHist 
         valence = getValence enacted
+    putStrLn $ "Intended: " ++ (printInter intendedInteraction)
     --putStrLn $ "Enacted: " ++ (printInter enacted) ++ " valence " ++ (show valence)
     
-    let enacted' = enacted -- failCheck enacted intendedInteraction
+    let enacted' =  failCheck enacted intendedInteraction
     
     let memory' = learner memory hist enacted'
         hist' = enacted' : hist
@@ -206,7 +208,7 @@ step count hist envHist memory = do
 
 -- Because I don't like just choosing E1 or E2
 getRandomExperiment :: Int -> Experiment
-getRandomExperiment n = let (r,g) = randomR (1,2) (mkStdGen (n^2)) :: (Int, StdGen)
+getRandomExperiment n = let (r,g) = randomR (1,2) (mkStdGen (n^20)) :: (Int, StdGen)
     in case r of
         1 -> E1
         2 -> E2
